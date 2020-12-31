@@ -3,15 +3,9 @@ MAKE=make
 CFLAGS=-Isrc/ -Wall
 
 ifeq ($(OS),Windows_NT)
-    uname_S := Windows
+	TARGET = j2534-tcp.dll
 else
-    uname_S := $(shell uname -s)
-endif
-
-ifeq ($(uname_S), Windows)
-    target = j2534-tcp.dll
-else
-    target = j2534-tcp.so
+	TARGET = j2534-tcp.so
 endif
 
 all:
@@ -27,4 +21,4 @@ lint:
 
 build:
 	mkdir build
-	$(CC) $(CFLAGS) src/*.c -shared -o build/$(target)
+	$(CC) $(CFLAGS) src/*.c -shared -o build/$(TARGET)
