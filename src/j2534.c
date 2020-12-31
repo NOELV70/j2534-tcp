@@ -3,77 +3,106 @@
 #include <windows.h>
 
 EXPORT int32_t PassThruOpen(const void *pName, uint32_t *pDeviceID) {
-  return 0;
+  // TODO: socket create
+  *pDeviceID = 0x00000001;
+  return STATUS_NOERROR;
 }
-
-EXPORT int32_t PassThruClose(uint32_t DeviceID) { return 0; }
 
 EXPORT int32_t PassThruConnect(uint32_t DeviceID, uint32_t ProtocolID,
                                uint32_t Flags, uint32_t Baudrate,
                                uint32_t *pChannelID) {
-  return 0;
+  // TODO: socket connect
+  *pChannelID = 0x00000001;
+  return STATUS_NOERROR;
 }
-
-EXPORT int32_t PassThruDisconnect(uint32_t ChannelID) { return 0; }
 
 EXPORT int32_t PassThruReadMsgs(uint32_t ChannelID, PASSTHRU_MSG *pMsg,
                                 uint32_t *pNumMsgs, uint32_t Timeout) {
-  return 0;
+  // TODO: read from socket
+  PASSTHRU_MSG msg = pMsg[0];
+  msg.ProtocolID = ISO15765;
+  msg.DataSize = 6;
+  // arbitration ID
+  msg.Data[0] = 0x00;
+  msg.Data[1] = 0x00;
+  msg.Data[2] = 0x07;
+  msg.Data[3] = 0xE8;
+  // PDU
+  msg.Data[4] = 0x7E;
+  msg.Data[5] = 0x00;
+  return STATUS_NOERROR;
 }
 
 EXPORT int32_t PassThruWriteMsgs(uint32_t ChannelID, const PASSTHRU_MSG *pMsg,
                                  uint32_t *pNumMsgs, uint32_t Timeout) {
-  return 0;
+  for (int i = 0; i < *pNumMsgs; ++i) {
+    PASSTHRU_MSG msg = pMsg[i];
+    // TODO: write to socket
+  }
+  return STATUS_NOERROR;
 }
 
-EXPORT int32_t PassThruStartPeriodicMsg(uint32_t ChannelID,
-                                        const PASSTHRU_MSG *pMsg,
-                                        uint32_t *pMsgID,
-                                        uint32_t TimeInterval) {
-  return 0;
-}
-
-EXPORT int32_t PassThruStopPeriodicMsg(uint32_t ChannelID, uint32_t MsgID) {
-  return 0;
-}
 
 EXPORT int32_t PassThruStartMsgFilter(uint32_t ChannelID, uint32_t FilterType,
                                       const PASSTHRU_MSG *pMaskMsg,
                                       const PASSTHRU_MSG *pPatternMsg,
                                       const PASSTHRU_MSG *pFlowControlMsg,
                                       uint32_t *pMsgID) {
-  return 0;
+  // TODO: keep state somewhere?
+  return STATUS_NOERROR;
+}
+
+EXPORT int32_t PassThruIoctl(uint32_t ChannelID, uint32_t IoctlID,
+                             const void *pInput, void *pOutput) {
+  // TODO: check IoctlID?
+  return STATUS_NOERROR;
+}
+
+EXPORT int32_t PassThruDisconnect(uint32_t ChannelID) {
+  // TODO: disconnect socket
+  return STATUS_NOERROR;
+}
+
+EXPORT int32_t PassThruClose(uint32_t DeviceID) {
+  // TODO: close socket?
+  return STATUS_NOERROR;
+}
+
+EXPORT int32_t PassThruStartPeriodicMsg(uint32_t ChannelID,
+                                        const PASSTHRU_MSG *pMsg,
+                                        uint32_t *pMsgID,
+                                        uint32_t TimeInterval) {
+  return ERR_NOT_SUPPORTED;
+}
+
+EXPORT int32_t PassThruStopPeriodicMsg(uint32_t ChannelID, uint32_t MsgID) {
+  return ERR_NOT_SUPPORTED;
 }
 
 EXPORT int32_t PassThruStopMsgFilter(uint32_t ChannelID, uint32_t MsgID) {
-  return 0;
+  return ERR_NOT_SUPPORTED;
 }
 
 EXPORT int32_t PassThruSetProgrammingVoltage(uint32_t DeviceID, uint32_t Pin,
                                              uint32_t Voltage) {
-  return 0;
+  return ERR_NOT_SUPPORTED;
 }
 
 EXPORT int32_t PassThruReadVersion(uint32_t DeviceID, char *pApiVersion,
                                    char *pDllVersion, char *pFirmwareVersion) {
-  return 0;
+  return ERR_NOT_SUPPORTED;
 }
 
 EXPORT int32_t PassThruGetLastError(char *pErrorDescription) { return 0; }
 
-EXPORT int32_t PassThruIoctl(uint32_t ChannelID, uint32_t IoctlID,
-                             const void *pInput, void *pOutput) {
-  return 0;
-}
-
 BOOL WINAPI DllMain(HINSTANCE hInstDll, DWORD dwReason, LPVOID lpvReserved) {
   switch (dwReason) {
-  case DLL_PROCESS_ATTACH: {
-    break;
-  }
-  case DLL_THREAD_ATTACH: {
-    break;
-  }
+    case DLL_PROCESS_ATTACH: {
+      break;
+    }
+    case DLL_THREAD_ATTACH: {
+      break;
+    }
   }
   return TRUE;
 }
