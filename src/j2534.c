@@ -1,9 +1,22 @@
-#include "j2534.h"
 #include <stdint.h>
+#include <winsock2.h>
 #include <windows.h>
+#include <string.h>
+#include "j2534.h"
+
+static int server_fd = -1;
+static int client_fd = -1;
 
 EXPORT int32_t PassThruOpen(const void *pName, uint32_t *pDeviceID) {
-  // TODO: socket create
+  WSADATA wsa;
+  struct sockaddr_in addr;
+  WSAStartup(MAKEWORD(2,2), &wsa);
+  server_fd = socket(AF_INET, SOCK_STREAM, 0);
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(30000);
+  addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  bind(server_fd, (struct sockaddr *)&addr, sizeof(addr));
+  listen(server_fd, SOMAXCONN);
   *pDeviceID = 0x00000001;
   return STATUS_NOERROR;
 }
@@ -12,6 +25,8 @@ EXPORT int32_t PassThruConnect(uint32_t DeviceID, uint32_t ProtocolID,
                                uint32_t Flags, uint32_t Baudrate,
                                uint32_t *pChannelID) {
   // TODO: socket connect
+
+
   *pChannelID = 0x00000001;
   return STATUS_NOERROR;
 }
@@ -93,7 +108,9 @@ EXPORT int32_t PassThruReadVersion(uint32_t DeviceID, char *pApiVersion,
   return ERR_NOT_SUPPORTED;
 }
 
-EXPORT int32_t PassThruGetLastError(char *pErrorDescription) { return 0; }
+EXPORT int32_t PassThruGetLastError(char *pErrorDescription) {
+  return ERR_NOT_SUPPORTED;
+}
 
 BOOL WINAPI DllMain(HINSTANCE hInstDll, DWORD dwReason, LPVOID lpvReserved) {
   switch (dwReason) {
