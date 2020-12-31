@@ -4,47 +4,49 @@
 #include <string.h>
 #include "j2534.h"
 
-static int server_fd = -1;
-static int client_fd = -1;
-
 EXPORT int32_t PassThruOpen(const void *pName, uint32_t *pDeviceID) {
   WSADATA wsa;
-  struct sockaddr_in addr;
+  int server_fd;
+  struct sockaddr_in server_address;
+  // wsa startup
   WSAStartup(MAKEWORD(2,2), &wsa);
+  // server socket
   server_fd = socket(AF_INET, SOCK_STREAM, 0);
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(30000);
-  addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  bind(server_fd, (struct sockaddr *)&addr, sizeof(addr));
+  // server address
+  memset(&server_address, 0, sizeof(server_address));
+  server_address.sin_family = AF_INET;
+  server_address.sin_port = htons(30000);
+  server_address.sin_addr.s_addr = htonl(INADDR_ANY);
+  // bind
+  bind(server_fd, (struct sockaddr*)&server_address, sizeof(server_address));
+  // listen
   listen(server_fd, SOMAXCONN);
-  *pDeviceID = 0x00000001;
+  // deviceId is really the serverFd
+  *pDeviceID = server_fd;
   return STATUS_NOERROR;
 }
 
 EXPORT int32_t PassThruConnect(uint32_t DeviceID, uint32_t ProtocolID,
                                uint32_t Flags, uint32_t Baudrate,
                                uint32_t *pChannelID) {
-  // TODO: socket connect
-
-
-  *pChannelID = 0x00000001;
+  struct sockaddr_in client_address;
+  int client_address_size;
+  // client address
+  client_address_size = sizeof(struct sockaddr_in);
+  memset(&client_address, 0, client_address_size);
+  // get client
+  int server_fd = DeviceID;
+  int client_fd = accept(server_fd, (struct sockaddr*)&client_address, &client_address_size);
+  // channelId is really the clientFd
+  *pChannelID = client_fd;
   return STATUS_NOERROR;
 }
 
 EXPORT int32_t PassThruReadMsgs(uint32_t ChannelID, PASSTHRU_MSG *pMsg,
                                 uint32_t *pNumMsgs, uint32_t Timeout) {
-  // TODO: read from socket
   PASSTHRU_MSG msg = pMsg[0];
   msg.ProtocolID = ISO15765;
-  msg.DataSize = 6;
-  // arbitration ID
-  msg.Data[0] = 0x00;
-  msg.Data[1] = 0x00;
-  msg.Data[2] = 0x07;
-  msg.Data[3] = 0xE8;
-  // PDU
-  msg.Data[4] = 0x7E;
-  msg.Data[5] = 0x00;
+  msg.DataSize = recv(ChannelID, (char*)msg.Data, sizeof(msg.Data), 0);
   return STATUS_NOERROR;
 }
 
@@ -52,7 +54,7 @@ EXPORT int32_t PassThruWriteMsgs(uint32_t ChannelID, const PASSTHRU_MSG *pMsg,
                                  uint32_t *pNumMsgs, uint32_t Timeout) {
   for (int i = 0; i < *pNumMsgs; ++i) {
     PASSTHRU_MSG msg = pMsg[i];
-    // TODO: write to socket
+    send(ChannelID, (char*)msg.Data, msg.DataSize, 0);
   }
   return STATUS_NOERROR;
 }
@@ -74,12 +76,14 @@ EXPORT int32_t PassThruIoctl(uint32_t ChannelID, uint32_t IoctlID,
 }
 
 EXPORT int32_t PassThruDisconnect(uint32_t ChannelID) {
-  // TODO: disconnect socket
+  closesocket(ChannelID);
   return STATUS_NOERROR;
 }
 
 EXPORT int32_t PassThruClose(uint32_t DeviceID) {
   // TODO: close socket?
+  closesocket(DeviceID);
+  WSACleanup();
   return STATUS_NOERROR;
 }
 
