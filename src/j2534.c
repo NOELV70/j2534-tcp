@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include "j2534.h"
 
 int32_t PassThruOpen(const void *pName, uint32_t *pDeviceID) { return 0; }
