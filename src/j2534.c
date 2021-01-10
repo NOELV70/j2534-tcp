@@ -61,31 +61,38 @@ EXPORT PassThruConnect(uint32_t DeviceID, uint32_t ProtocolID,
 
 EXPORT PassThruReadMsgs(uint32_t ChannelID, PASSTHRU_MSG *pMsg,
                                 uint32_t *pNumMsgs, uint32_t Timeout) {
-  //printf("PassThruReadMsgs *pNumMsgs = %08x Timeout = %08x\n", *pNumMsgs, Timeout);
+  // printf("PassThruReadMsgs *pNumMsgs = %08x Timeout = %08x\n", *pNumMsgs, Timeout);
   for (;;) {
     unsigned long bytes_available = 0;
     ioctlsocket(ChannelID, FIONREAD, &bytes_available);
     // no messages available
-    if (bytes_available < 12) {
+    if (bytes_available < 4) {
       *pNumMsgs = 0;
       return STATUS_NOERROR;
     }
-    // receive a message
+    // prepare struct
     PASSTHRU_MSG msg = pMsg[0];
-    msg.ProtocolID = ISO15765;
-    msg.DataSize = recv(ChannelID, (char*)msg.Data, 12, 0);
+    msg.ProtocolID = CAN;
+    // receive length
+    uint32_t networkMsgDataSize;
+    recv(ChannelID, &networkMsgDataSize, sizeof(uint32_t), MSG_WAITALL);
+    msg.DataSize = ntohl(networkMsgDataSize);
+    printf("msg.DataSize = %08x\n", msg.DataSize);
+    // receive payload
+    recv(ChannelID, msg.Data, msg.DataSize, MSG_WAITALL);
     // skip ping frames
     if (msg.Data[0] == 0x00 &&
         msg.Data[1] == 0x00 &&
         msg.Data[2] == 0x00 &&
         msg.Data[3] == 0x00) {
+      printf("recv'd ping frame\n");
       continue;
     }
+    printf("PassThruReadMsgs ");
     for (int i = 0; i < msg.DataSize; ++i) {
       printf("%02x", msg.Data[i]);
     }
     printf("\n");
-    printf("recved...\n");
     *pNumMsgs = 0x00000001;
     return STATUS_NOERROR;
   }
@@ -93,15 +100,16 @@ EXPORT PassThruReadMsgs(uint32_t ChannelID, PASSTHRU_MSG *pMsg,
 
 EXPORT PassThruWriteMsgs(uint32_t ChannelID, const PASSTHRU_MSG *pMsg,
                                  uint32_t *pNumMsgs, uint32_t Timeout) {
-  printf("PassThruWriteMsgs *pNumMsgs = %08x Timeout = %08x\n", *pNumMsgs, Timeout);
   for (int i = 0; i < *pNumMsgs; ++i) {
     PASSTHRU_MSG msg = pMsg[i];
-    send(ChannelID, (char*)msg.Data, msg.DataSize, 0);
+    uint32_t bigEndianMsgDataSize = htonl(msg.DataSize);
+    send(ChannelID, &bigEndianMsgDataSize, sizeof(uint32_t), 0);
+    send(ChannelID, msg.Data, msg.DataSize, 0);
+    printf("PassThruWriteMsgs ");
     for (int x = 0; x < msg.DataSize; ++x) {
       printf("%02x", msg.Data[x]);
     }
     printf("\n");
-    printf("wrote...\n");
   }
   return STATUS_NOERROR;
 }
