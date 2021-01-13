@@ -3,114 +3,237 @@
 #include <windows.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 #include "j2534.h"
+
+/*
+cd C:\Program Files (x86)\Softing\Diagnostic Tool Set 8\8.14\bin\
+C:\Program Files (x86)\Softing\D-PDU API\11.26.072\VeCom\vecomw32fwj25proc.exe /s"j2534-tcp" /p9804 /l"C:\j2534-tcp\j2534-tcp.dll" /v2 /k0 /t"C:\ProgramData\Softing\D-PDU API\11.26.072\d-pduapi.ini"
+*/
+
+static HANDLE mutex = NULL;
+static PASSTHRU_MSG recv_buffer[4096];
+static int recv_buffer_size = 0;
+static int client_fd = -1;
+static int server_fd = -1;
 
 void init_console() {
   AllocConsole();
   freopen("CONIN$", "r", stdin);
   freopen("CONOUT$", "w", stdout);
   freopen("CONOUT$", "w", stderr);
-  printf("DLL loaded!\n");
 }
 
-EXPORT PassThruOpen(const void *pName, uint32_t *pDeviceID) {
-  printf("PassThruOpen\n");
+void close_client() {
+  if (client_fd != -1) {
+    printf("closing client\n");
+    shutdown(client_fd, SD_BOTH);
+    closesocket(client_fd);
+    client_fd = -1;
+  }
+}
+
+void close_server() {
+  if (server_fd != -1) {
+    printf("closing server\n");
+    shutdown(server_fd, SD_BOTH);
+    closesocket(server_fd);
+    server_fd = -1;
+  }
+}
+
+unsigned long GetTime()
+{
+  FILETIME t;
+  GetSystemTimeAsFileTime(&t);
+  return t.dwLowDateTime;
+}
+
+void init_server() {
   WSADATA wsa;
-  int server_fd;
+  struct sockaddr_in server_address;
   // wsa startup
   WSAStartup(MAKEWORD(2,2), &wsa);
   // server socket
   server_fd = socket(AF_INET, SOCK_STREAM, 0);
-  // deviceId is really the serverFd
-  *pDeviceID = server_fd;
-  return STATUS_NOERROR;
-}
-
-EXPORT PassThruConnect(uint32_t DeviceID, uint32_t ProtocolID,
-                               uint32_t Flags, uint32_t Baudrate,
-                               uint32_t *pChannelID) {
-  printf("PassThruConnect\n");
-  struct sockaddr_in server_address;
-  struct sockaddr_in client_address;
-  int client_address_size;
-  int server_fd;
-  // deviceId is really serverFd
-  server_fd = DeviceID;
   // server address
   memset(&server_address, 0, sizeof(server_address));
   server_address.sin_family = AF_INET;
   server_address.sin_port = htons(30000);
   server_address.sin_addr.s_addr = htonl(INADDR_ANY);
   // bind
-  char socket_option_value = 1;
-  setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &socket_option_value, sizeof(socket_option_value));
+  char yes = 1;
+  setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
   bind(server_fd, (struct sockaddr*)&server_address, sizeof(server_address));
   // listen
   listen(server_fd, SOMAXCONN);
   printf("listening...\n");
-  // client address
-  client_address_size = sizeof(struct sockaddr_in);
-  memset(&client_address, 0, client_address_size);
-  // get client
-  int client_fd = accept(server_fd, (struct sockaddr*)&client_address, &client_address_size);
-  printf("accepted...\n");
-  // channelId is really the clientFd
-  *pChannelID = client_fd;
+}
+
+DWORD WINAPI accept_thread(void* data) {
+  for (;;) {
+    // client address
+    struct sockaddr_in client_address;
+    int client_address_size;
+    client_address_size = sizeof(struct sockaddr_in);
+    memset(&client_address, 0, client_address_size);
+    // accept client
+    printf("waiting to accept...\n");
+    client_fd = accept(server_fd, (struct sockaddr*)&client_address, &client_address_size);
+    if (client_fd == -1) {
+      printf("failed to accept\n");
+      continue;
+    }
+    printf("accepted...\n");
+    // set sockopt
+    char yes = 1;
+    setsockopt(client_fd, SOL_SOCKET, TCP_NODELAY, &yes, sizeof(yes));
+  }
+  return 0;
+}
+
+DWORD WINAPI recv_thread(void* data) {
+  char buffer[8192];
+  for (;;) {
+    // client not connected yet;
+    if (client_fd == -1) {
+      usleep(1);
+      continue;
+    }
+    // receive length
+    uint32_t networkMsgDataSize;
+    if (recv(client_fd, (char*)&networkMsgDataSize, sizeof(uint32_t), MSG_WAITALL) != sizeof(uint32_t)) {
+      printf("recv1 failed\n");
+      continue;
+    }
+    uint32_t hostMsgDataSize = ntohl(networkMsgDataSize);
+    // receive payload
+    if (recv(client_fd, buffer, hostMsgDataSize, MSG_WAITALL) != hostMsgDataSize) {
+      printf("recv2 failed\n");
+      continue;
+    }
+    // skip ping frames
+    if (buffer[0] == 0x00 &&
+        buffer[1] == 0x00 &&
+        buffer[2] == 0x00 &&
+        buffer[3] == 0x00) {
+      printf("got ping frame\n");
+      continue;
+    }
+    // push to buffer
+    WaitForSingleObject(mutex, INFINITE);
+    PASSTHRU_MSG *buffer_msg = &recv_buffer[recv_buffer_size];
+    memset(buffer_msg, 0, sizeof(PASSTHRU_MSG));
+    buffer_msg->ProtocolID = CAN;
+    buffer_msg->Timestamp = GetTime();
+    buffer_msg->DataSize = hostMsgDataSize;
+    memcpy(buffer_msg->Data, buffer, hostMsgDataSize);
+    recv_buffer_size += 1;
+    ReleaseMutex(mutex);
+     // log
+    printf("recv_thread %d\n", buffer_msg->DataSize);
+  }
+}
+
+void init_thread() {
+  HANDLE accept_handle = CreateThread(NULL, 0, accept_thread, NULL, 0, NULL);
+  if (!accept_handle) {
+    printf("failed to create accept thread\n");
+  }
+  HANDLE recv_handle = CreateThread(NULL, 0, recv_thread, NULL, 0, NULL);
+  if (!recv_handle) {
+    printf("failed to create accept thread\n");
+  }
+}
+
+EXPORT PassThruOpen(const void *pName, uint32_t *pDeviceID) {
+  printf("PassThruOpen\n");
+  *pDeviceID = 1;
+  return STATUS_NOERROR;
+}
+
+EXPORT PassThruConnect(uint32_t DeviceID, uint32_t ProtocolID,
+                               uint32_t Flags, uint32_t Baudrate,
+                               uint32_t *pChannelID) {
+  printf("PassThruConnect DeviceID = %08x ProtocolID = %08x\n", DeviceID, ProtocolID);
+  if (ProtocolID != CAN) {
+    return ERR_INVALID_PROTOCOL_ID;
+  }
+  *pChannelID = 1;
   return STATUS_NOERROR;
 }
 
 EXPORT PassThruReadMsgs(uint32_t ChannelID, PASSTHRU_MSG *pMsg,
                                 uint32_t *pNumMsgs, uint32_t Timeout) {
-  // printf("PassThruReadMsgs *pNumMsgs = %08x Timeout = %08x\n", *pNumMsgs, Timeout);
-  for (;;) {
-    unsigned long bytes_available = 0;
-    ioctlsocket(ChannelID, FIONREAD, &bytes_available);
-    // no messages available
-    if (bytes_available < 4) {
-      *pNumMsgs = 0;
-      return STATUS_NOERROR;
+  // printf("PassThruReadMsgs *pNumMsgs = %d Timeout = %d\n", *pNumMsgs, Timeout);
+  usleep(1);
+  WaitForSingleObject(mutex, INFINITE);
+  uint32_t numMsgs = 0;
+  // check recv buffer
+  if (recv_buffer_size != 0) {
+    for (int i = 0; i < recv_buffer_size; ++i) {
+      PASSTHRU_MSG *msg = &pMsg[i];
+      PASSTHRU_MSG *recv_msg = &recv_buffer[i];
+      msg->ProtocolID = recv_msg->ProtocolID;
+      msg->RxStatus = recv_msg->RxStatus;
+      msg->Timestamp = recv_msg->Timestamp;
+      msg->DataSize = recv_msg->DataSize;
+      memcpy(msg->Data, recv_msg->Data, msg->DataSize);
+       // log
+      printf("PassThruReadMsgs msg->DataSize = %d\n", msg->DataSize);
+      numMsgs += 1;
+      recv_buffer_size -= 1;
     }
-    // prepare struct
-    PASSTHRU_MSG msg = pMsg[0];
-    msg.ProtocolID = CAN;
-    // receive length
-    uint32_t networkMsgDataSize;
-    recv(ChannelID, &networkMsgDataSize, sizeof(uint32_t), MSG_WAITALL);
-    msg.DataSize = ntohl(networkMsgDataSize);
-    printf("msg.DataSize = %08x\n", msg.DataSize);
-    // receive payload
-    recv(ChannelID, msg.Data, msg.DataSize, MSG_WAITALL);
-    // skip ping frames
-    if (msg.Data[0] == 0x00 &&
-        msg.Data[1] == 0x00 &&
-        msg.Data[2] == 0x00 &&
-        msg.Data[3] == 0x00) {
-      printf("recv'd ping frame\n");
-      continue;
-    }
-    printf("PassThruReadMsgs ");
-    for (int i = 0; i < msg.DataSize; ++i) {
-      printf("%02x", msg.Data[i]);
-    }
-    printf("\n");
-    *pNumMsgs = 0x00000001;
-    return STATUS_NOERROR;
   }
+  ReleaseMutex(mutex);
+  *pNumMsgs = numMsgs;
+  return numMsgs == 0 ? ERR_BUFFER_EMPTY : STATUS_NOERROR;
 }
 
 EXPORT PassThruWriteMsgs(uint32_t ChannelID, const PASSTHRU_MSG *pMsg,
                                  uint32_t *pNumMsgs, uint32_t Timeout) {
-  for (int i = 0; i < *pNumMsgs; ++i) {
-    PASSTHRU_MSG msg = pMsg[i];
-    uint32_t bigEndianMsgDataSize = htonl(msg.DataSize);
-    send(ChannelID, &bigEndianMsgDataSize, sizeof(uint32_t), 0);
-    send(ChannelID, msg.Data, msg.DataSize, 0);
-    printf("PassThruWriteMsgs ");
-    for (int x = 0; x < msg.DataSize; ++x) {
-      printf("%02x", msg.Data[x]);
-    }
-    printf("\n");
+  // client not connected yet
+  if (client_fd == -1) {
+    *pNumMsgs = 0x00000000;
+    return ERR_FAILED;
   }
+  uint32_t numMsgsSent = 0;
+  for (int i = 0; i < *pNumMsgs; ++i) {
+    const PASSTHRU_MSG *msg = &pMsg[i];
+    // check for wrong protocol ID
+    if (msg->ProtocolID != CAN) {
+      *pNumMsgs = numMsgsSent;
+      return ERR_MSG_PROTOCOL_ID;
+    }
+    uint32_t bigEndianMsgDataSize = htonl(msg->DataSize);
+    // send length
+    if (send(client_fd, (char*)&bigEndianMsgDataSize, sizeof(uint32_t), 0) != sizeof(uint32_t)) {
+      printf("send1 failed\n");
+      *pNumMsgs = numMsgsSent;
+      return ERR_FAILED;
+    }
+    // send payload
+    if (send(client_fd, (char*)msg->Data, msg->DataSize, 0) != msg->DataSize) {
+      printf("send2 failed\n");
+      *pNumMsgs = numMsgsSent;
+      return ERR_FAILED;
+    }
+    numMsgsSent += 1;
+    // record loopback
+    WaitForSingleObject(mutex, INFINITE);
+    PASSTHRU_MSG *loopback_msg = &recv_buffer[recv_buffer_size];
+    memset(loopback_msg, 0, sizeof(PASSTHRU_MSG));
+    loopback_msg->ProtocolID = msg->ProtocolID;
+    loopback_msg->RxStatus = msg->RxStatus | TX_MSG_TYPE;
+    loopback_msg->Timestamp = GetTime();
+    loopback_msg->DataSize = msg->DataSize;
+    memcpy(loopback_msg->Data, msg->Data, msg->DataSize);
+    recv_buffer_size += 1;
+    ReleaseMutex(mutex);
+    // log
+    printf("PassThruWriteMsgs msg->DataSize = %d\n", msg->DataSize);
+  }
+  *pNumMsgs = numMsgsSent;
   return STATUS_NOERROR;
 }
 
@@ -134,24 +257,27 @@ EXPORT PassThruStopMsgFilter(uint32_t ChannelID, uint32_t MsgID) {
 EXPORT PassThruIoctl(uint32_t ChannelID, uint32_t IoctlID,
                              const void *pInput, void *pOutput) {
   // TODO: check IoctlID?
-  // 3?
-  // 2?
+  // 3 READ_VBATT?
+  // 2 CONFIG_SET?
   printf("PassThruIoctl IoctlID = %08x\n", IoctlID);
   return STATUS_NOERROR;
 }
 
 EXPORT PassThruDisconnect(uint32_t ChannelID) {
   printf("PassThruDisconnect\n");
-  shutdown(ChannelID, SD_BOTH);
-  closesocket(ChannelID);
+  sleep(1);
+  close_client();
   return STATUS_NOERROR;
 }
 
 EXPORT PassThruClose(uint32_t DeviceID) {
   printf("PassThruClose\n");
-  shutdown(DeviceID, SD_BOTH);
+  sleep(1);
+  close_client();
+  close_server();
+  /*shutdown(DeviceID, SD_BOTH);
   closesocket(DeviceID);
-  WSACleanup();
+  WSACleanup();*/
   return STATUS_NOERROR;
 }
 
@@ -188,7 +314,11 @@ EXPORT PassThruGetLastError(char *pErrorDescription) {
 BOOL WINAPI DllMain(HINSTANCE hInstDll, DWORD dwReason, LPVOID lpvReserved) {
   switch (dwReason) {
     case DLL_PROCESS_ATTACH: {
+      mutex = CreateMutex(NULL, FALSE, NULL);
       init_console();
+      init_server();
+      init_thread();
+      printf("DLL_PROCESS_ATTACH!\n");
       break;
     }
     case DLL_THREAD_ATTACH: {
@@ -196,6 +326,7 @@ BOOL WINAPI DllMain(HINSTANCE hInstDll, DWORD dwReason, LPVOID lpvReserved) {
       break;
     }
     case DLL_PROCESS_DETACH: {
+      close_client();
       printf("DLL_PROCESS_DETACH\n");
       break;
     }

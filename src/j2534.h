@@ -73,6 +73,17 @@ EXPORT PassThruIoctl(uint32_t ChannelID, uint32_t IoctlID,
 #define SCI_B_ENGINE        9
 #define SCI_B_TRANS         10
 
+//
+// J2534-1 v04.04 RxStatus Definitions
+//
+#define TX_MSG_TYPE         0x0001
+#define START_OF_MESSAGE      0x0002
+#define RX_BREAK          0x0004
+#define TX_INDICATION       0x0008
+#define ISO15765_PADDING_ERROR    0x0010
+#define ISO15765_ADDR_TYPE      0x0080
+//#define CAN_29BIT_ID        0x0100    // Defined above
+
 /*************/
 /* Error IDs */
 /*************/
