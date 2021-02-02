@@ -142,7 +142,7 @@ DWORD WINAPI recv_thread(void* data) {
   }
 }
 
-void init_thread() {
+void init_threads() {
   HANDLE accept_handle = CreateThread(NULL, 0, accept_thread, NULL, 0, NULL);
   if (!accept_handle) {
     printf("failed to create accept thread\n");
@@ -327,7 +327,7 @@ BOOL WINAPI DllMain(HINSTANCE hInstDll, DWORD dwReason, LPVOID lpvReserved) {
       mutex = CreateMutex(NULL, FALSE, NULL);
       init_console();
       init_server();
-      init_thread();
+      init_threads();
       printf("DLL_PROCESS_ATTACH!\n");
       break;
     }
