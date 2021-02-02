@@ -42,8 +42,13 @@ void close_server() {
   }
 }
 
-unsigned long GetTime()
-{
+void reset_buffer() {
+  WaitForSingleObject(mutex, INFINITE);
+  recv_buffer_size = 0;
+  ReleaseMutex(mutex);
+}
+
+unsigned long GetTime() {
   FILETIME t;
   GetSystemTimeAsFileTime(&t);
   return t.dwLowDateTime;
@@ -88,6 +93,8 @@ DWORD WINAPI accept_thread(void* data) {
     // set sockopt
     char yes = 1;
     setsockopt(client_fd, SOL_SOCKET, TCP_NODELAY, &yes, sizeof(yes));
+    // reset buffer
+    reset_buffer();
   }
   return 0;
 }
@@ -197,6 +204,7 @@ EXPORT PassThruWriteMsgs(uint32_t ChannelID, const PASSTHRU_MSG *pMsg,
     *pNumMsgs = 0x00000000;
     return ERR_FAILED;
   }
+  printf("PassThruWriteMsgs *pNumMsgs = %d\n", *pNumMsgs);
   uint32_t numMsgsSent = 0;
   for (int i = 0; i < *pNumMsgs; ++i) {
     const PASSTHRU_MSG *msg = &pMsg[i];
@@ -267,12 +275,14 @@ EXPORT PassThruDisconnect(uint32_t ChannelID) {
   printf("PassThruDisconnect\n");
   sleep(1);
   close_client();
+  reset_buffer();
   return STATUS_NOERROR;
 }
 
 EXPORT PassThruClose(uint32_t DeviceID) {
   printf("PassThruClose\n");
   sleep(1);
+  reset_buffer();
   close_client();
   close_server();
   /*shutdown(DeviceID, SD_BOTH);
