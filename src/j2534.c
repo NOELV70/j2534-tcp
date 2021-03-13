@@ -11,12 +11,12 @@ cd C:\Program Files (x86)\Softing\Diagnostic Tool Set 8\8.14\bin\
 C:\Program Files (x86)\Softing\D-PDU API\11.26.072\VeCom\vecomw32fwj25proc.exe /s"j2534-tcp" /p9804 /l"C:\j2534-tcp\j2534-tcp.dll" /v2 /k0 /t"C:\ProgramData\Softing\D-PDU API\11.26.072\d-pduapi.ini"
 */
 
-#define PASS_THRU_WRITE_MSGS_SLEEP_MS 1
-#define PASS_THRU_READ_MSGS_SLEEP_MS 1
-#define RECV_THREAD_SLEEP_MS 1
+#define PASS_THRU_WRITE_MSGS_SLEEP_MS 0
+#define PASS_THRU_READ_MSGS_SLEEP_MS 0
+#define RECV_THREAD_SLEEP_MS 0
 
 static HANDLE recv_buffer_mutex = NULL;
-static PASSTHRU_MSG recv_buffer[65535];
+static PASSTHRU_MSG recv_buffer[100000];
 static int recv_buffer_size = 0;
 static int client_fd = -1;
 static int server_fd = -1;
