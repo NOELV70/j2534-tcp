@@ -11,8 +11,12 @@ cd C:\Program Files (x86)\Softing\Diagnostic Tool Set 8\8.14\bin\
 C:\Program Files (x86)\Softing\D-PDU API\11.26.072\VeCom\vecomw32fwj25proc.exe /s"j2534-tcp" /p9804 /l"C:\j2534-tcp\j2534-tcp.dll" /v2 /k0 /t"C:\ProgramData\Softing\D-PDU API\11.26.072\d-pduapi.ini"
 */
 
-static HANDLE mutex = NULL;
-static PASSTHRU_MSG recv_buffer[4096];
+#define PASS_THRU_WRITE_MSGS_SLEEP_MS 1
+#define PASS_THRU_READ_MSGS_SLEEP_MS 1
+#define RECV_THREAD_SLEEP_MS 1
+
+static HANDLE recv_buffer_mutex = NULL;
+static PASSTHRU_MSG recv_buffer[65535];
 static int recv_buffer_size = 0;
 static int client_fd = -1;
 static int server_fd = -1;
@@ -43,9 +47,9 @@ void close_server() {
 }
 
 void reset_buffer() {
-  WaitForSingleObject(mutex, INFINITE);
+  WaitForSingleObject(recv_buffer_mutex, INFINITE);
   recv_buffer_size = 0;
-  ReleaseMutex(mutex);
+  ReleaseMutex(recv_buffer_mutex);
 }
 
 unsigned long GetTime() {
@@ -102,21 +106,22 @@ DWORD WINAPI accept_thread(void* data) {
 DWORD WINAPI recv_thread(void* data) {
   char buffer[8192];
   for (;;) {
+    // sleep
+    usleep(RECV_THREAD_SLEEP_MS * 1000);
     // client not connected yet;
     if (client_fd == -1) {
-      usleep(1);
       continue;
     }
     // receive length
     uint32_t networkMsgDataSize;
     if (recv(client_fd, (char*)&networkMsgDataSize, sizeof(uint32_t), MSG_WAITALL) != sizeof(uint32_t)) {
-      printf("recv1 failed\n");
+      printf("recv1 failed errno = %d\n", WSAGetLastError());
       continue;
     }
     uint32_t hostMsgDataSize = ntohl(networkMsgDataSize);
     // receive payload
     if (recv(client_fd, buffer, hostMsgDataSize, MSG_WAITALL) != hostMsgDataSize) {
-      printf("recv2 failed\n");
+      printf("recv2 failed errno = %d\n", WSAGetLastError());
       continue;
     }
     // skip ping frames
@@ -128,17 +133,19 @@ DWORD WINAPI recv_thread(void* data) {
       continue;
     }
     // push to buffer
-    WaitForSingleObject(mutex, INFINITE);
+    WaitForSingleObject(recv_buffer_mutex, INFINITE);
     PASSTHRU_MSG *buffer_msg = &recv_buffer[recv_buffer_size];
     memset(buffer_msg, 0, sizeof(PASSTHRU_MSG));
     buffer_msg->ProtocolID = CAN;
     buffer_msg->Timestamp = GetTime();
     buffer_msg->DataSize = hostMsgDataSize;
     memcpy(buffer_msg->Data, buffer, hostMsgDataSize);
+    // log
+    printf("recv_thread: buffer_msg->DataSize = %04x\n", buffer_msg->DataSize);
+    // increment
     recv_buffer_size += 1;
-    ReleaseMutex(mutex);
-     // log
-    printf("recv_thread %d\n", buffer_msg->DataSize);
+    // release
+    ReleaseMutex(recv_buffer_mutex);
   }
 }
 
@@ -173,8 +180,8 @@ EXPORT PassThruConnect(uint32_t DeviceID, uint32_t ProtocolID,
 EXPORT PassThruReadMsgs(uint32_t ChannelID, PASSTHRU_MSG *pMsg,
                                 uint32_t *pNumMsgs, uint32_t Timeout) {
   // printf("PassThruReadMsgs *pNumMsgs = %d Timeout = %d\n", *pNumMsgs, Timeout);
-  usleep(1);
-  WaitForSingleObject(mutex, INFINITE);
+  usleep(PASS_THRU_READ_MSGS_SLEEP_MS * 1000);
+  WaitForSingleObject(recv_buffer_mutex, INFINITE);
   uint32_t numMsgs = 0;
   // check recv buffer
   if (recv_buffer_size != 0) {
@@ -186,13 +193,15 @@ EXPORT PassThruReadMsgs(uint32_t ChannelID, PASSTHRU_MSG *pMsg,
       msg->Timestamp = recv_msg->Timestamp;
       msg->DataSize = recv_msg->DataSize;
       memcpy(msg->Data, recv_msg->Data, msg->DataSize);
-       // log
-      printf("PassThruReadMsgs msg->DataSize = %d\n", msg->DataSize);
+      // log
+      printf("PassThruReadMsgs: msg->DataSize = %04x\n", msg->DataSize);
+      // increment
       numMsgs += 1;
-      recv_buffer_size -= 1;
     }
+    // set buffer as depleted
+    recv_buffer_size = 0;
   }
-  ReleaseMutex(mutex);
+  ReleaseMutex(recv_buffer_mutex);
   *pNumMsgs = numMsgs;
   return numMsgs == 0 ? ERR_BUFFER_EMPTY : STATUS_NOERROR;
 }
@@ -216,19 +225,19 @@ EXPORT PassThruWriteMsgs(uint32_t ChannelID, const PASSTHRU_MSG *pMsg,
     uint32_t bigEndianMsgDataSize = htonl(msg->DataSize);
     // send length
     if (send(client_fd, (char*)&bigEndianMsgDataSize, sizeof(uint32_t), 0) != sizeof(uint32_t)) {
-      printf("send1 failed\n");
+      printf("send1 failed errno = %d\n", WSAGetLastError());
       *pNumMsgs = numMsgsSent;
       return ERR_FAILED;
     }
     // send payload
     if (send(client_fd, (char*)msg->Data, msg->DataSize, 0) != msg->DataSize) {
-      printf("send2 failed\n");
+      printf("send2 failed errno = %d\n", WSAGetLastError());
       *pNumMsgs = numMsgsSent;
       return ERR_FAILED;
     }
     numMsgsSent += 1;
     // record loopback
-    WaitForSingleObject(mutex, INFINITE);
+    WaitForSingleObject(recv_buffer_mutex, INFINITE);
     PASSTHRU_MSG *loopback_msg = &recv_buffer[recv_buffer_size];
     memset(loopback_msg, 0, sizeof(PASSTHRU_MSG));
     loopback_msg->ProtocolID = msg->ProtocolID;
@@ -236,10 +245,14 @@ EXPORT PassThruWriteMsgs(uint32_t ChannelID, const PASSTHRU_MSG *pMsg,
     loopback_msg->Timestamp = GetTime();
     loopback_msg->DataSize = msg->DataSize;
     memcpy(loopback_msg->Data, msg->Data, msg->DataSize);
-    recv_buffer_size += 1;
-    ReleaseMutex(mutex);
     // log
-    printf("PassThruWriteMsgs msg->DataSize = %d\n", msg->DataSize);
+    printf("PassThruWriteMsgs: loopback_msg->DataSize = %04x\n", msg->DataSize);
+    // increment
+    recv_buffer_size += 1;
+    // release
+    ReleaseMutex(recv_buffer_mutex);
+    // sleep
+    usleep(PASS_THRU_WRITE_MSGS_SLEEP_MS * 1000);
   }
   *pNumMsgs = numMsgsSent;
   return STATUS_NOERROR;
@@ -324,7 +337,7 @@ EXPORT PassThruGetLastError(char *pErrorDescription) {
 BOOL WINAPI DllMain(HINSTANCE hInstDll, DWORD dwReason, LPVOID lpvReserved) {
   switch (dwReason) {
     case DLL_PROCESS_ATTACH: {
-      mutex = CreateMutex(NULL, FALSE, NULL);
+      recv_buffer_mutex = CreateMutex(NULL, FALSE, NULL);
       init_console();
       init_server();
       init_threads();
