@@ -14,6 +14,7 @@ C:\Program Files (x86)\Softing\D-PDU API\11.26.072\VeCom\vecomw32fwj25proc.exe /
 #define PASS_THRU_WRITE_MSGS_SLEEP_MS 0
 #define PASS_THRU_READ_MSGS_SLEEP_MS 0
 #define RECV_THREAD_SLEEP_MS 0
+#define PORT 30000
 
 static HANDLE recv_buffer_mutex = NULL;
 static PASSTHRU_MSG recv_buffer[100000];
@@ -68,7 +69,7 @@ void init_server() {
   // server address
   memset(&server_address, 0, sizeof(server_address));
   server_address.sin_family = AF_INET;
-  server_address.sin_port = htons(30000);
+  server_address.sin_port = htons(PORT);
   server_address.sin_addr.s_addr = htonl(INADDR_ANY);
   // bind
   char yes = 1;
