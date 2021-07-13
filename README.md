@@ -16,7 +16,7 @@ Virtual J2534 driver over TCP/IP
 1. Open `flasher.exe`
 1. Go to `USB -> TCP Remote Diagnostics Proxy (CAN)` module
 1. Pick `Mode: Client`
-1. Enter the IP of the server
+1. Enter the external IPv4 of the server
 1. Leave port at `30000`
 1. You will need to figure out request + reply arbitration IDs for the modules you want to work on. You may also need to check the `Diagnostic firewall` box.
 1. Click `Connect.
