@@ -281,6 +281,10 @@ EXPORT PassThruIoctl(uint32_t ChannelID, uint32_t IoctlID,
   // 3 READ_VBATT?
   // 2 CONFIG_SET?
   printf("PassThruIoctl IoctlID = %08x\n", IoctlID);
+  if (IoctlID == READ_VBATT) {
+    unsigned int *voltageLevel = (unsigned int*)pOutput;
+    *voltageLevel = 12; // TODO: is this format for 12v?
+  }
   return STATUS_NOERROR;
 }
 

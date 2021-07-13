@@ -73,6 +73,21 @@ EXPORT PassThruIoctl(uint32_t ChannelID, uint32_t IoctlID,
 #define SCI_B_ENGINE        9
 #define SCI_B_TRANS         10
 
+// Ioctls
+#define   GET_CONFIG        0x01  // SCONFIG_LIST   NULL
+#define   SET_CONFIG        0x02  // SCONFIG_LIST   NULL
+#define   READ_VBATT        0x03  // NULL     unsigned long
+#define   FIVE_BAUD_INIT        0x04  // SBYTE_ARRAY    SBYTE_ARRAY
+#define   FAST_INIT       0x05  // PASSTHRU_MSG   PASSTHRU_MSG
+#define   CLEAR_TX_BUFFER       0x07  // NULL     NULL
+#define   CLEAR_RX_BUFFER       0x08  // NULL     NULL
+#define   CLEAR_PERIODIC_MSGS     0x09  // NULL     NULL
+#define   CLEAR_MSG_FILTERS     0x0A  // NULL     NULL
+#define   CLEAR_FUNCT_MSG_LOOKUP_TABLE    0x0B  // NULL     NULL
+#define   ADD_TO_FUNCT_MSG_LOOKUP_TABLE   0x0C  // SBYTE_ARRAY    NULL
+#define   DELETE_FROM_FUNCT_MSG_LOOKUP_TABLE  0x0D  // SBYTE_ARRAY    NULL
+#define   READ_PROG_VOLTAGE     0x0E  // NULL     unsigned long
+
 //
 // J2534-1 v04.04 RxStatus Definitions
 //
