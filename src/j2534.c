@@ -284,7 +284,7 @@ EXPORT PassThruIoctl(uint32_t ChannelID, uint32_t IoctlID,
   printf("PassThruIoctl IoctlID = %08x\n", IoctlID);
   if (IoctlID == READ_VBATT) {
     unsigned int *voltageLevel = (unsigned int*)pOutput;
-    *voltageLevel = 12; // TODO: is this format for 12v?
+    *voltageLevel = 12000; // The units will be in milli-volts and will be rounded to the nearest tenth of a volt.
   }
   return STATUS_NOERROR;
 }
