@@ -3,7 +3,7 @@ Virtual J2534 driver over TCP/IP
 
 ## Instructions (server)
 
-1. Put `j2534-tcp.dll` at `C:\obdlabs\j2534-tcp.dll` (create directory if needed)
+1. Put `j2534-tcp.dll` at `C:\j2534-tcp\j2534-tcp.dll` (create directory if needed)
 1. Run `j2534-tcp.reg`
 1. Configure DTS.Monaco or Xentry PassThru to use `j2534-tcp` device.
 1. Get your external IPv4 (not IPv6) from https://www.whatismyip.com/
