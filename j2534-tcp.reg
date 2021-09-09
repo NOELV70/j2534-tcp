@@ -4,9 +4,9 @@ Windows Registry Editor Version 5.00
 
 [HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\PassThruSupport.04.04\j2534-tcp]
 "Name"="j2534-tcp"
-"Vendor"="OBDLabs"
+"Vendor"="j2534-tcp"
 "ConfigApplication"=""
-"FunctionLibrary"="C:\\obdlabs\\j2534-tcp.dll"
+"FunctionLibrary"="C:\\j2534-tcp\\j2534-tcp.dll"
 "DeviceId"=dword:00000000
 "CAN"=dword:00000001
 "ISO15765"=dword:00000001
